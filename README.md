@@ -3,7 +3,9 @@ Creates GUI translating product information from e-commerce site Volusion.
 
 ## How To Create Executable File
 
-### Step 1: Download Python File (create_volusion_loadsheet.py) from Git Hub repository project
+### Step 1: Download Python File from Git Hub repository project
+
+File is called "create_volusion_loadsheet.py" and will be used to build the GUI.
 
 ### Step 2: Download the following onto your computer:
 
