@@ -1,5 +1,5 @@
 # Create Volusion Loadsheet
-Creates GUI translating product information from e-commerce site Volusion.
+Creates GUI translating product information from e-commerce site Volusion. For access to the completed exe file, visit the "Release" section.
 
 ## How To Create Executable File
 
