@@ -1,0 +1,6 @@
+productcode,productname,ischildofproductcode,productprice,length,width,height,productweight,productdescriptionshort,photourl
+MP001       ,Boat Anchor    ,None                 ,120,60,45,25,15,Galvanized steel anchor suitable for boats up to 30 feet.    ,http://example.com/images/boat_anchor.jpg
+MP002       ,Outboard Motor ,None                 ,1500,100,60,80,85,High-performance outboard motor for small to mid-size boats. ,http://example.com/images/outboard_motor.jpg
+MP003       ,Propeller      ,MP002                ,300,40,40,10,7.5,Aluminum propeller compatible with MP002 motor.              ,http://example.com/images/propeller.jpg
+MP004       ,Fuel Tank      ,MP002                ,180,70,50,40,20,Portable marine fuel tank with secure locking cap.           ,http://example.com/images/fuel_tank.jpg
+MP005       ,Motor Cover    ,MP002                ,60,50,45,20,2,Protective cover for the MP002 outboard motor.               ,http://example.com/images/motor_cover.jpg
