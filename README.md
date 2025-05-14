@@ -1,5 +1,21 @@
 # Create Volusion Loadsheet
-Creates GUI translating product information from e-commerce site Volusion. For access to the completed exe file, visit the "Release" section.
+
+This repository creates a GUI translating product information from e-commerce site Volusion. The resulting load sheet contains the following information:
+
+* **Part #**: taken from "productcode" field
+* **Title**: taken from "productname" field
+* **Retail Price**: taken from "productweight" field
+* **Jobber Price (optional)**: calculated from "Retail Price" field, default is 0.85 times the Retail Price
+* **Dealer Price (optional)**: calculated from "Retail Price" field, default is 0.75 times the Retail Price
+* **OEM/WD Price (optional)**: calculated from "Retail Price" field, default is 0.675 times the Retail Price
+* **Length (in)**: taken from "length" field
+* **Width (in)**: taken from "width" field
+* **Height (in)**: taken from "height" field
+* **Weight (lb)**: taken from "productweight"
+* **Description**: taken from "productdescriptionshort"
+* **Image**: taken from "photourl"
+
+For access to the completed exe file, visit the "Release" section.
 
 ## How To Create Executable File
 
