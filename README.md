@@ -4,16 +4,16 @@ This repository creates a GUI translating product information from e-commerce si
 
 * **Part #**: taken from "productcode" field
 * **Title**: taken from "productname" field
-* **Retail Price**: taken from "productweight" field
+* **Retail Price**: taken from "productprice" field
 * **Jobber Price (optional)**: calculated from "Retail Price" field, default is 0.85 times the Retail Price
 * **Dealer Price (optional)**: calculated from "Retail Price" field, default is 0.75 times the Retail Price
 * **OEM/WD Price (optional)**: calculated from "Retail Price" field, default is 0.675 times the Retail Price
 * **Length (in)**: taken from "length" field
 * **Width (in)**: taken from "width" field
 * **Height (in)**: taken from "height" field
-* **Weight (lb)**: taken from "productweight"
-* **Description**: taken from "productdescriptionshort"
-* **Image**: taken from "photourl"
+* **Weight (lb)**: taken from "productweight" field
+* **Description**: taken from "productdescriptionshort" field
+* **Image**: taken from "photourl" field
 
 For access to the completed exe file, visit the "Release" section.
 
