@@ -40,7 +40,7 @@ def _process_file_worker(file_path):
             result = chardet.detect(raw_data)
             encoding = result['encoding']
 
-        # Step 1: Read csv file. Confirm if required columns are in the file.
+        # Step 1: Read csv file. Confirm that required columns are in the file.
         df = pd.read_csv(file_path, encoding=encoding)
         required_columns = ['productcode', 'productname', 'ischildofproductcode', 'productprice',
                             'length', 'width', 'height', 'productweight', 'productdescriptionshort', 'photourl']
@@ -87,7 +87,7 @@ def _process_file_worker(file_path):
         if oemwd_price_var.get():
             selected_columns.insert(3 + sum([jobber_price_var.get(), dealer_price_var.get()]), 'OEM/WD Price')
 
-        # Step 4: Rename and reorder columns
+        # Step 5: Rename and reorder columns
         variant_list = variant_list[selected_columns]
         variant_list.rename(columns={
             'productcode': 'Part #',
@@ -104,7 +104,7 @@ def _process_file_worker(file_path):
         global processed_data
         processed_data = variant_list
 
-        # Step 5: Process data successful message
+        # Step 6: Process data successful message
         root.after(0, lambda: [
             save_button.config(state=tk.NORMAL),
             process_button.config(state=tk.NORMAL),
