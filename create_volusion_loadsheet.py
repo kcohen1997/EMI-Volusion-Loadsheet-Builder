@@ -1,10 +1,11 @@
+# --- Import necessary libraries ---
 import pandas as pd
 import tkinter as tk
 from tkinter import filedialog, messagebox
 import chardet
 import threading
 
-# --- Float Validation ---
+# --- Validation: Allow only valid float values in text entries ---
 def validate_float_input(new_value):
     if new_value == "":
         return True
@@ -14,10 +15,13 @@ def validate_float_input(new_value):
     except ValueError:
         return False
 
-# --- Text Placeholder Function ---
+# --- Add placeholder text to entry fields ---
 def add_placeholder(entry, text):
-    entry.insert(0, text)
-    entry.config(fg="gray")
+    entry.configure(validate="none")
+    
+    if not entry.get():
+        entry.insert(0, text)
+        entry.config(fg="gray")
 
     def on_focus_in(event):
         if entry.get() == text:
@@ -25,216 +29,152 @@ def add_placeholder(entry, text):
             entry.config(fg="black")
 
     def on_focus_out(event):
-        if entry.get() == "":
+        if not entry.get():
             entry.insert(0, text)
             entry.config(fg="gray")
 
     entry.bind("<FocusIn>", on_focus_in)
     entry.bind("<FocusOut>", on_focus_out)
 
-# --- Background Processing (Background Worker Function) ---
+    # Re-enable validation
+    entry.configure(validate="key")
+
+def build_full_title(row):
+    base_title = str(row.get('Title', '')).strip()
+    options = []
+    for opt_key in ['Option1 Value', 'Option2 Value', 'Option3 Value']:
+        val = row.get(opt_key)
+        if pd.notna(val):
+            val_str = str(val).strip()
+            if val_str and val_str.lower() != 'default title':
+                options.append(val_str)
+    return f"{base_title} - {' - '.join(options)}" if options else base_title
+
+# --- Core file processing logic that runs in a background thread ---
 def _process_file_worker(file_path):
     try:
+
+        # Step 1: Read CSV File
         with open(file_path, 'rb') as f:
             raw_data = f.read()
-            result = chardet.detect(raw_data)
-            encoding = result['encoding']
+            encoding = chardet.detect(raw_data)['encoding']
 
-        # Step 1: Read csv file. Confirm that required columns are in the file.
-        df = pd.read_csv(file_path, encoding=encoding)
-        required_columns = ['productcode', 'productname', 'ischildofproductcode', 'productprice',
-                            'length', 'width', 'height', 'productweight', 'productdescriptionshort', 'photourl']
-        missing_columns = [col for col in required_columns if col not in df.columns]
-        if missing_columns:
-            raise ValueError(f"Missing required columns: {', '.join(missing_columns)}")
-        
-        # Step 2: Check to make sure that product price of items are greater than 0
-        df['productprice'] = pd.to_numeric(df['productprice'], errors='coerce')
-        invalid_prices = df['productprice'].isna().sum()
-        if invalid_prices > 0:
-            raise ValueError(f"{invalid_prices} row(s) have invalid or missing 'productprice' values.")
+        df = pd.read_csv(file_path, encoding=encoding, low_memory=False)
 
-        # Step 3: Filter out parent ids
-        variant_list = df[required_columns].copy()
-        child_product_codes = variant_list['ischildofproductcode'].dropna().unique()
-        variant_list = variant_list[~variant_list['productcode'].isin(child_product_codes)]
-        variant_list.drop(columns=['ischildofproductcode'], inplace=True)
+        # Step 2: Only include Visible Products
+        child_product_codes = df['ischildofproductcode'].dropna().unique()
+        df = df[~df['productcode'].isin(child_product_codes)]
 
-        # Step 4: Calculate price multipliers
+        # Step 3: Add Multipliers
         try:
-            jobber_multiplier = float(jobber_price_entry.get()) if jobber_price_entry.get() else 0.85
+            jobber_multiplier = float(jobber_price_entry.get()) if jobber_price_entry.get() else 0.85 # get multiplers from text input
             dealer_multiplier = float(dealer_price_entry.get()) if dealer_price_entry.get() else 0.75
             oemwd_multiplier = float(oemwd_price_entry.get()) if oemwd_price_entry.get() else 0.675
         except ValueError:
             root.after(0, lambda: [
                 status_label.config(text="Error: Invalid multiplier"),
-                messagebox.showerror("Input Error", "Please enter valid numeric values for the price multipliers."),
-                process_button.config(state=tk.NORMAL)
+                messagebox.showerror("Input Error", "Please enter valid numeric values for multipliers."),
             ])
             return
-        if jobber_price_var.get():
-            variant_list['Jobber Price'] = round(variant_list['productprice'] * jobber_multiplier, 2)
-        if dealer_price_var.get():
-            variant_list['Dealer Price'] = round(variant_list['productprice'] * dealer_multiplier, 2)
-        if oemwd_price_var.get():
-            variant_list['OEM/WD Price'] = round(variant_list['productprice'] * oemwd_multiplier, 2)
-        selected_columns = ['productcode', 'productname', 'productprice', 'length', 'width', 'height',
-                            'productweight', 'productdescriptionshort', 'photourl']
-        if jobber_price_var.get():
-            selected_columns.insert(3, 'Jobber Price')
-        if dealer_price_var.get():
-            selected_columns.insert(3 if not jobber_price_var.get() else 4, 'Dealer Price')
-        if oemwd_price_var.get():
-            selected_columns.insert(3 + sum([jobber_price_var.get(), dealer_price_var.get()]), 'OEM/WD Price')
+        df['Jobber Price'] = round(df['productprice'] * jobber_multiplier, 2) # calculate prices based on multipliers
+        df['Dealer Price'] = round(df['productprice'] * dealer_multiplier, 2)
+        df['OEM/WD Price'] = round(df['productprice'] * oemwd_multiplier, 2)
+        price_columns = ['productprice', 'Jobber Price', 'Dealer Price', 'OEM/WD Price'] # convert prices to currency
+        for col in price_columns:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce') \
+                    .map(lambda x: f"${x:,.2f}" if pd.notnull(x) else "")
 
-        # Step 5: Rename and reorder columns
-        variant_list = variant_list[selected_columns]
-        variant_list.rename(columns={
+        # Step 4: Create final list of columns
+        final_variant_list = df.copy()
+        final_column_list = [
+            'productcode', 'productname', 'ischildofproductcode', 'productprice', 'Jobber Price',
+            'Dealer Price', 'OEM/WD Price', 'length', 'width', 'productweight', 'Fitment',
+            'productdescriptionshort', 'photourl', 'Image 2', 'Image 3'
+        ]
+        
+        for col in final_column_list: # if column is not on csv file, fill in with '#N/A'
+            if col not in final_variant_list.columns:
+                final_variant_list[col] = '#N/A'
+        final_variant_list = final_variant_list[final_column_list] # only include columns from column list
+
+        final_variant_list.rename(columns={ # rename specific columns 
             'productcode': 'Part #',
-            'productname': 'Title',
+            'productname': 'Full Title',
+            'ischildofproductcode': 'Parent #',
             'productprice': 'Retail Price',
             'length': 'Length (in)',
             'width': 'Width (in)',
             'height': 'Height (in)',
-            'productweight': 'Weight (lb)',
+            'productweight': 'Weight (in)',
             'productdescriptionshort': 'Description',
-            'photourl': 'Image'
+            'photourl': 'Image 1',
         }, inplace=True)
 
-        global processed_data
-        processed_data = variant_list
+        # Step 5: Fill all empty fields with '#N/A'
+        final_variant_list.fillna("#N/A", inplace=True)
 
-        # Step 6: Process data successful message
-        root.after(0, lambda: [
-            save_button.config(state=tk.NORMAL),
-            process_button.config(state=tk.NORMAL),
-            status_label.config(text="Done"),
-            messagebox.showinfo("Success", f"File processed successfully! You can now save your file.")
-        ])
+        # Step 6: Save the final processed CSV
+        output_file_path = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV files", "*.csv")])
+        if output_file_path:
+            final_variant_list.to_csv(output_file_path, index=False)
+            root.after(0, lambda: [
+                status_label.config(text="Processing complete."),
+                messagebox.showinfo("Success", f"File processed and saved as {output_file_path}"),
+            ])
+        else:
+            root.after(0, lambda: [
+                status_label.config(text="Save cancelled."),
+            ])
 
     except Exception as e:
         root.after(0, lambda: [
-            status_label.config(text="Error during processing"),
-            process_button.config(state=tk.NORMAL),
-            messagebox.showerror("Error", f"An error occurred:\n{str(e)}")
+            status_label.config(text=f"Error: {e}"),
+            messagebox.showerror("Error", f"An error occurred:\n{e}"),
         ])
 
-# --- Main Process Trigger (on Button) ---
-def process_file():
-    process_button.config(state=tk.DISABLED)
-    save_button.config(state=tk.DISABLED)
+def process_file(file_path):
     status_label.config(text="Processing...")
-
-    # Validate multipliers before opening file
-    try:
-        jm = jobber_price_entry.get()
-        dm = dealer_price_entry.get()
-        om = oemwd_price_entry.get()
-
-        jobber_multiplier = float(jm) if jm else 0.85
-        dealer_multiplier = float(dm) if dm else 0.75
-        oemwd_multiplier = float(om) if om else 0.675
-
-        for name, value in [('Jobber', jobber_multiplier), ('Dealer', dealer_multiplier), ('OEM/WD', oemwd_multiplier)]:
-            if not (0 < value <= 1):
-                raise ValueError(f"{name} multiplier must be between 0 and 1.")
-
-    except ValueError as ve:
-        messagebox.showerror("Multiplier Error", f"Invalid input:\n{ve}")
-        status_label.config(text="Ready")
-        process_button.config(state=tk.NORMAL)
-        return
-
-    file_path = filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])
-    if not file_path:
-        process_button.config(state=tk.NORMAL)
-        status_label.config(text="Ready")
-        return
-
-    # If everything is valid, proceed with background processing
     threading.Thread(target=_process_file_worker, args=(file_path,), daemon=True).start()
 
-# --- Save File Function ---
-def save_file():
-    if 'processed_data' not in globals():
-        messagebox.showerror("Error", "No data to save!")
-        return
+def select_file():
+    file_path = filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])
+    if file_path:
+        process_file(file_path)
 
-    save_path = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV files", "*.csv")])
-    if save_path:
-        try:
-            processed_data.to_csv(save_path, index=False)
-            messagebox.showinfo("Success", "File saved successfully!")
-        except Exception as e:
-            messagebox.showerror("Error", f"An error occurred while saving the file:\n{str(e)}")
-
-# --- GUI Setup ---
+# --- GUI setup ---
 root = tk.Tk()
+root.title("Volusion CSV Processor (EMS)")
 
-# GUI Basics
-root.title("Create Volusion Loadsheet")
-root.geometry("700x600")
+# --- Frame for multiplier entries ---
+entry_frame = tk.Frame(root)
+entry_frame.pack(padx=20, pady=20)
 
-# Add label for downloading product list from site
-label = tk.Label(root, text="Step 1: Download product list from Volusion if you haven't already (must be in CSV format)", font=("Helvetica", 10, "bold"))
-label.pack(pady=10)
+vcmd = (root.register(validate_float_input), '%P')
 
-# Add label for apply multipliers (optional)
-label = tk.Label(root, text="Step 2: Apply multipliers for additional pricing metrics (optional)", font=("Helvetica", 10, "bold"))
-label.pack(pady=10)
-
-# Add Multiplier Text Inputs
-vcmd = root.register(validate_float_input)
-
-jobber_label = tk.Label(root, text="Jobber Price Multiplier (default 0.85):") # Jobber multiplier
-jobber_label.pack(pady=5)
-jobber_price_entry = tk.Entry(root, validate="key", validatecommand=(vcmd, '%P'))
-jobber_price_entry.pack(pady=5)
+# --- Multiplers ---
+tk.Label(entry_frame, text="Jobber Price Multiplier:").grid(row=0, column=0, sticky="e")
+jobber_price_entry = tk.Entry(entry_frame, validate="key", validatecommand=vcmd)
+jobber_price_entry.grid(row=0, column=1, padx=(10, 10), pady=5)
 add_placeholder(jobber_price_entry, "0.85")
 
-dealer_label = tk.Label(root, text="Dealer Price Multiplier (default 0.75):") # Dealer multiplier
-dealer_label.pack(pady=5)
-dealer_price_entry = tk.Entry(root, validate="key", validatecommand=(vcmd, '%P'))
-dealer_price_entry.pack(pady=5)
+tk.Label(entry_frame, text="Dealer Price Multiplier:").grid(row=1, column=0, sticky="e")
+dealer_price_entry = tk.Entry(entry_frame, validate="key", validatecommand=vcmd)
+dealer_price_entry.grid(row=1, column=1, padx=(10, 10), pady=5)
 add_placeholder(dealer_price_entry, "0.75")
 
-oemwd_label = tk.Label(root, text="OEM/WD Price Multiplier (default 0.675):") # OEM/WD multiplier
-oemwd_label.pack(pady=5)
-oemwd_price_entry = tk.Entry(root, validate="key", validatecommand=(vcmd, '%P'))
-oemwd_price_entry.pack(pady=5)
+tk.Label(entry_frame, text="OEM/WD Price Multiplier:").grid(row=2, column=0, sticky="e")
+oemwd_price_entry = tk.Entry(entry_frame, validate="key", validatecommand=vcmd)
+oemwd_price_entry.grid(row=2, column=1, padx=(10, 10), pady=5)
 add_placeholder(oemwd_price_entry, "0.675")
 
-# Checkbox: should we include jobber/dealer, oem/wd price in loadsheet?
-jobber_price_var = tk.BooleanVar(value=True)
-jobber_check = tk.Checkbutton(root, text="Include Jobber Price", variable=jobber_price_var)
-jobber_check.pack(pady=5)
+# --- Process Button ---
+process_button = tk.Button(root, text="Select and Process CSV File", command=select_file)
+process_button.pack(pady=5)
 
-dealer_price_var = tk.BooleanVar(value=True)
-dealer_check = tk.Checkbutton(root, text="Include Dealer Price", variable=dealer_price_var)
-dealer_check.pack(pady=5)
-
-oemwd_price_var = tk.BooleanVar(value=True)
-oemwd_check = tk.Checkbutton(root, text="Include OEM/WD Price", variable=oemwd_price_var)
-oemwd_check.pack(pady=5)
-
-# Add label for processing CSV file
-label = tk.Label(root, text="Step 3: Click button below to select and process your CSV file", font=("Helvetica", 10, "bold"))
-label.pack(pady=10)
-
-# Select CSV input download
-process_button = tk.Button(root, text="Select CSV and Process", command=process_file)
-process_button.pack(pady=10)
-
-# Status label
+# --- Status Label ---
 status_label = tk.Label(root, text="", fg="blue")
-status_label.pack(pady=10)
+status_label.pack(pady=5)
 
-# Add label for saving processed file
-label = tk.Label(root, text="Step 4: Click button below to save your newly processed file", font=("Helvetica", 10, "bold"))
-label.pack(pady=10)
-
-# Button to save newly processed file
-save_button = tk.Button(root, text="Save Processed CSV", command=save_file, state=tk.DISABLED)
-save_button.pack(pady=10)
-
+# --- Run the GUI event loop ---
 root.mainloop()
