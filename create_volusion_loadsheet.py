@@ -61,6 +61,10 @@ def _process_file_worker(file_path):
 
         df = pd.read_csv(file_path, encoding=encoding, low_memory=False)
 
+        # Step 2: Get Parent Title
+        productcode_to_title = df.set_index('productcode')['productname'].to_dict() # Create a mapping from productcode to productname
+        df['Parent Title'] = df['ischildofproductcode'].map(productcode_to_title) # Create a new 'Parent Title' column
+
         # Step 2: Only include Visible Products
         child_product_codes = df['ischildofproductcode'].dropna().unique()
         df = df[~df['productcode'].isin(child_product_codes)]
@@ -88,7 +92,7 @@ def _process_file_worker(file_path):
         # Step 4: Create final list of columns
         final_variant_list = df.copy()
         final_column_list = [
-            'productcode', 'productname', 'ischildofproductcode', 'productprice', 'Jobber Price',
+            'productcode', 'productname', 'ischildofproductcode', 'Parent Title', 'productprice', 'Jobber Price',
             'Dealer Price', 'OEM/WD Price', 'length', 'width', 'productweight', 'Fitment',
             'productdescriptionshort', 'photourl', 'Image 2', 'Image 3', 'producturl'
         ]
@@ -102,6 +106,7 @@ def _process_file_worker(file_path):
             'productcode': 'Part #',
             'productname': 'Full Title',
             'ischildofproductcode': 'Parent #',
+            'Parent Title': 'Title',
             'productprice': 'Retail Price',
             'length': 'Length (in)',
             'width': 'Width (in)',
