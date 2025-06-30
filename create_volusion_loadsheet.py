@@ -90,7 +90,7 @@ def _process_file_worker(file_path):
         final_column_list = [
             'productcode', 'productname', 'ischildofproductcode', 'productprice', 'Jobber Price',
             'Dealer Price', 'OEM/WD Price', 'length', 'width', 'productweight', 'Fitment',
-            'productdescriptionshort', 'photourl', 'Image 2', 'Image 3'
+            'productdescriptionshort', 'photourl', 'Image 2', 'Image 3', 'producturl'
         ]
         
         for col in final_column_list: # if column is not on csv file, fill in with '#N/A'
@@ -109,6 +109,7 @@ def _process_file_worker(file_path):
             'productweight': 'Weight (in)',
             'productdescriptionshort': 'Description',
             'photourl': 'Image 1',
+            'producturl': 'Product Link'
         }, inplace=True)
 
         # Step 5: Fill all empty fields with '#N/A'
