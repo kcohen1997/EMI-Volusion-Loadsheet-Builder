@@ -93,8 +93,7 @@ def _process_file_worker(file_path):
         final_variant_list = df.copy()
         final_column_list = [
             'productcode', 'productname', 'ischildofproductcode', 'Parent Title', 'productprice', 'Jobber Price',
-            'Dealer Price', 'OEM/WD Price', 'length', 'width', 'productweight', 'Fitment',
-            'productdescriptionshort', 'photourl', 'Image 2', 'Image 3', 'producturl'
+            'Dealer Price', 'OEM/WD Price', 'length', 'width', 'productweight', 'productdescriptionshort', 'photourl', 'Image 2', 'Image 3', 'producturl'
         ]
         
         for col in final_column_list: # if column is not on csv file, fill in with '#N/A'
