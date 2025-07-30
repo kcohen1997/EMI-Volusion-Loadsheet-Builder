@@ -117,19 +117,10 @@ def _process_file_worker(file_path):
             'producturl': 'Product Link'
         }, inplace=True)
 
-        # Step 5: Convert Image and Product URL columns into Excel-friendly hyperlinks
-        hyperlink_columns = ['Image 1', 'Image 2', 'Image 3', 'Product Link']
-
-        for col in hyperlink_columns:
-            if col in final_variant_list.columns:
-                final_variant_list[col] = final_variant_list[col].apply(
-                    lambda x: f'=HYPERLINK("{x}")' if pd.notna(x) and str(x).strip().lower() != '#n/a' else '#N/A'
-                )
-
-        # Step 6: Fill all empty fields with '#N/A'
+        # Step 5: Fill all empty fields with '#N/A'
         final_variant_list.fillna("#N/A", inplace=True)
 
-        # Step 7: Save the final processed CSV
+        # Step 6: Save the final processed CSV
         output_file_path = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV files", "*.csv")])
         if output_file_path:
             final_variant_list.to_csv(output_file_path, index=False)
