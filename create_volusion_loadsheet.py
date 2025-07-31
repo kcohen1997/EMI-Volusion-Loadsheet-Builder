@@ -4,41 +4,20 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 import chardet
 import threading
+import os
 
-# --- Validation: Allow only valid float values in text entries ---
-def validate_float_input(new_value):
-    if new_value == "":
-        return True
-    try:
-        float(new_value)
-        return True
-    except ValueError:
-        return False
+# --- Global to hold the processed DataFrame ---
+processed_df = None
 
-# --- Add placeholder text to entry fields ---
-def add_placeholder(entry, text):
-    entry.configure(validate="none")
-    
-    if not entry.get():
-        entry.insert(0, text)
-        entry.config(fg="gray")
+# --- Helper: Shorten long filenames with ellipsis ---
+def shorten_filename(path, max_length=50):
+    filename = os.path.basename(path)
+    if len(filename) <= max_length:
+        return filename
+    else:
+        return "..." + filename[-(max_length - 3):]
 
-    def on_focus_in(event):
-        if entry.get() == text:
-            entry.delete(0, tk.END)
-            entry.config(fg="black")
-
-    def on_focus_out(event):
-        if not entry.get():
-            entry.insert(0, text)
-            entry.config(fg="gray")
-
-    entry.bind("<FocusIn>", on_focus_in)
-    entry.bind("<FocusOut>", on_focus_out)
-
-    # Re-enable validation
-    entry.configure(validate="key")
-
+# --- Build full title from options (kept in case needed in future) ---
 def build_full_title(row):
     base_title = str(row.get('Title', '')).strip()
     options = []
@@ -52,56 +31,37 @@ def build_full_title(row):
 
 # --- Core file processing logic that runs in a background thread ---
 def _process_file_worker(file_path):
+    global processed_df
     try:
-
-        # Step 1: Read CSV File
         with open(file_path, 'rb') as f:
             raw_data = f.read()
             encoding = chardet.detect(raw_data)['encoding']
 
         df = pd.read_csv(file_path, encoding=encoding, low_memory=False)
 
-        # Step 2: Get Parent Title
-        productcode_to_title = df.set_index('productcode')['productname'].to_dict() # Create a mapping from productcode to productname
-        df['Parent Title'] = df['ischildofproductcode'].map(productcode_to_title) # Create a new 'Parent Title' column
+        productcode_to_title = df.set_index('productcode')['productname'].to_dict()
+        df['Parent Title'] = df['ischildofproductcode'].map(productcode_to_title)
 
-        # Step 2: Only include Visible Products
         child_product_codes = df['ischildofproductcode'].dropna().unique()
         df = df[~df['productcode'].isin(child_product_codes)]
 
-        # Step 3: Add Multipliers
-        try:
-            jobber_multiplier = float(jobber_price_entry.get()) if jobber_price_entry.get() else 0.85 # get multiplers from text input
-            dealer_multiplier = float(dealer_price_entry.get()) if dealer_price_entry.get() else 0.75
-            oemwd_multiplier = float(oemwd_price_entry.get()) if oemwd_price_entry.get() else 0.675
-        except ValueError:
-            root.after(0, lambda: [
-                status_label.config(text="Error: Invalid multiplier"),
-                messagebox.showerror("Input Error", "Please enter valid numeric values for multipliers."),
-            ])
-            return
-        df['Jobber Price'] = round(df['productprice'] * jobber_multiplier, 2) # calculate prices based on multipliers
-        df['Dealer Price'] = round(df['productprice'] * dealer_multiplier, 2)
-        df['OEM/WD Price'] = round(df['productprice'] * oemwd_multiplier, 2)
-        price_columns = ['productprice', 'Jobber Price', 'Dealer Price', 'OEM/WD Price'] # convert prices to currency
-        for col in price_columns:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce') \
-                    .map(lambda x: f"${x:,.2f}" if pd.notnull(x) else "")
+        if 'productprice' in df.columns:
+            df['productprice'] = pd.to_numeric(df['productprice'], errors='coerce') \
+                .map(lambda x: f"${x:,.2f}" if pd.notnull(x) else "")
 
-        # Step 4: Create final list of columns
         final_variant_list = df.copy()
         final_column_list = [
-            'productcode', 'productname', 'ischildofproductcode', 'Parent Title', 'productprice', 'Jobber Price',
-            'Dealer Price', 'OEM/WD Price', 'length', 'width', 'productweight', 'productdescriptionshort', 'photourl', 'Image 2', 'Image 3', 'producturl'
+            'productcode', 'productname', 'ischildofproductcode', 'Parent Title', 'productprice',
+            'length', 'width', 'height', 'productweight',
+            'productdescriptionshort', 'photourl', 'Image 2', 'Image 3', 'producturl'
         ]
-        
-        for col in final_column_list: # if column is not on csv file, fill in with '#N/A'
+
+        for col in final_column_list:
             if col not in final_variant_list.columns:
                 final_variant_list[col] = '#N/A'
-        final_variant_list = final_variant_list[final_column_list] # only include columns from column list
+        final_variant_list = final_variant_list[final_column_list]
 
-        final_variant_list.rename(columns={ # rename specific columns 
+        final_variant_list.rename(columns={
             'productcode': 'Part #',
             'productname': 'Full Title',
             'ischildofproductcode': 'Parent #',
@@ -116,70 +76,78 @@ def _process_file_worker(file_path):
             'producturl': 'Product Link'
         }, inplace=True)
 
-        # Step 5: Fill all empty fields with '#N/A'
         final_variant_list.fillna("#N/A", inplace=True)
+        processed_df = final_variant_list
 
-        # Step 6: Save the final processed CSV
-        output_file_path = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV files", "*.csv")])
-        if output_file_path:
-            final_variant_list.to_csv(output_file_path, index=False)
-            root.after(0, lambda: [
-                status_label.config(text="Processing complete."),
-                messagebox.showinfo("Success", f"File processed and saved as {output_file_path}"),
-            ])
-        else:
-            root.after(0, lambda: [
-                status_label.config(text="Save cancelled."),
-            ])
+        root.after(0, lambda: [
+            status_label.config(text="Processing complete. You may now save the file."),
+            save_button.config(state=tk.NORMAL)
+        ])
 
     except Exception as e:
         root.after(0, lambda: [
             status_label.config(text=f"Error: {e}"),
             messagebox.showerror("Error", f"An error occurred:\n{e}"),
+            save_button.config(state=tk.DISABLED)
         ])
 
-def process_file(file_path):
-    status_label.config(text="Processing...")
-    threading.Thread(target=_process_file_worker, args=(file_path,), daemon=True).start()
-
-def select_file():
+# --- File selection and processing trigger ---
+def process_file():
     file_path = filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])
     if file_path:
-        process_file(file_path)
+        status_label.config(text="Processing...")
+        save_button.config(state=tk.DISABLED)
+
+        short_name = shorten_filename(file_path)
+        filename_label.config(text=f"File: {short_name}")
+
+        threading.Thread(target=_process_file_worker, args=(file_path,), daemon=True).start()
+
+# --- Save processed file ---
+def save_file():
+    global processed_df
+    if processed_df is not None:
+        output_path = filedialog.asksaveasfilename(
+            defaultextension=".csv",
+            initialfile="processed_loadsheet.csv",
+            filetypes=[("CSV files", "*.csv")]
+        )
+        if output_path:
+            try:
+                processed_df.to_csv(output_path, index=False)
+                status_label.config(text="File saved successfully.")
+                messagebox.showinfo("Success", f"File saved to:\n{output_path}")
+            except PermissionError:
+                messagebox.showerror("Permission Error", "The file is open in another program (e.g., Excel). Please close it and try again.")
+                status_label.config(text="Error saving file.")
+            except Exception as e:
+                messagebox.showerror("Save Error", f"Failed to save file:\n{e}")
+                status_label.config(text="Error saving file.")
+        else:
+            status_label.config(text="Save cancelled.")
+    else:
+        messagebox.showwarning("No Data", "No processed data to save.")
 
 # --- GUI setup ---
 root = tk.Tk()
-root.title("Volusion CSV Processor (EMS)")
-
-# --- Frame for multiplier entries ---
-entry_frame = tk.Frame(root)
-entry_frame.pack(padx=20, pady=20)
-
-vcmd = (root.register(validate_float_input), '%P')
-
-# --- Multiplers ---
-tk.Label(entry_frame, text="Jobber Price Multiplier:").grid(row=0, column=0, sticky="e")
-jobber_price_entry = tk.Entry(entry_frame, validate="key", validatecommand=vcmd)
-jobber_price_entry.grid(row=0, column=1, padx=(10, 10), pady=5)
-add_placeholder(jobber_price_entry, "0.85")
-
-tk.Label(entry_frame, text="Dealer Price Multiplier:").grid(row=1, column=0, sticky="e")
-dealer_price_entry = tk.Entry(entry_frame, validate="key", validatecommand=vcmd)
-dealer_price_entry.grid(row=1, column=1, padx=(10, 10), pady=5)
-add_placeholder(dealer_price_entry, "0.75")
-
-tk.Label(entry_frame, text="OEM/WD Price Multiplier:").grid(row=2, column=0, sticky="e")
-oemwd_price_entry = tk.Entry(entry_frame, validate="key", validatecommand=vcmd)
-oemwd_price_entry.grid(row=2, column=1, padx=(10, 10), pady=5)
-add_placeholder(oemwd_price_entry, "0.675")
+root.title("EMI Loadsheet Builder")
+root.geometry("400x150")
 
 # --- Process Button ---
-process_button = tk.Button(root, text="Select and Process CSV File", command=select_file)
-process_button.pack(pady=5)
+process_button = tk.Button(root, text="Select and Process CSV File", command=process_file)
+process_button.pack(padx=20, pady=(20, 5))
+
+# --- Filename Label (moved directly under the process button) ---
+filename_label = tk.Label(root, text="", fg="gray")
+filename_label.pack(pady=(0, 10))
+
+# --- Save Button ---
+save_button = tk.Button(root, text="Save Processed File", command=save_file, state=tk.DISABLED)
+save_button.pack(padx=20, pady=(0, 10))
 
 # --- Status Label ---
 status_label = tk.Label(root, text="", fg="blue")
-status_label.pack(pady=5)
+status_label.pack(pady=(0, 10))
 
 # --- Run the GUI event loop ---
 root.mainloop()
