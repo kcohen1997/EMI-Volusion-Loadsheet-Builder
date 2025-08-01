@@ -38,9 +38,16 @@ def load_category_file():
         category_filename_label.config(text=f"Category File: {shorten_filename(file_path)}")
         status_label.config(text="Category file loaded successfully.")
 
-        # Now that both files are loaded, enable processing
+        # Enable processing only if product file is already selected
         if product_file_path:
             process_button.config(state=tk.NORMAL)
+
+    except FileNotFoundError:
+        messagebox.showerror("Category File Error", "Category file not found.")
+        status_label.config(text="Category file not found.")
+    except pd.errors.EmptyDataError:
+        messagebox.showerror("Category File Error", "Category file is empty.")
+        status_label.config(text="Category file is empty.")
     except Exception as e:
         messagebox.showerror("Category File Error", f"Failed to load category file:\n{e}")
         status_label.config(text="Error loading category file.")
@@ -62,27 +69,40 @@ def resolve_category_names(ids_str):
 def _process_file_worker(file_path):
     global processed_df
     try:
+        # Detect encoding
         with open(file_path, 'rb') as f:
             raw_data = f.read()
             encoding = chardet.detect(raw_data)['encoding']
 
+        # Load product CSV
         df = pd.read_csv(file_path, encoding=encoding, low_memory=False)
 
+        # Validate required columns for processing
+        required_cols = ['productcode', 'productname', 'ischildofproductcode']
+        for col in required_cols:
+            if col not in df.columns:
+                raise ValueError(f"Missing required column '{col}' in product file.")
+
+        # Map parent title using productcode -> productname
         productcode_to_title = df.set_index('productcode')['productname'].to_dict()
         df['Parent Title'] = df['ischildofproductcode'].map(productcode_to_title)
 
+        # Remove rows that are children (keep only parents)
         child_product_codes = df['ischildofproductcode'].dropna().unique()
         df = df[~df['productcode'].isin(child_product_codes)]
 
+        # Format price if column exists
         if 'productprice' in df.columns:
             df['productprice'] = pd.to_numeric(df['productprice'], errors='coerce') \
                 .map(lambda x: f"${x:,.2f}" if pd.notnull(x) else "")
 
+        # Resolve category names if available
         if 'categoryids' in df.columns and category_mapping:
             df['Category Names'] = df['categoryids'].map(resolve_category_names)
         else:
             df['Category Names'] = "#N/A"
 
+        # Prepare final columns
         final_variant_list = df.copy()
         final_column_list = [
             'productcode', 'productname', 'ischildofproductcode', 'Parent Title', 'productprice',
@@ -93,13 +113,14 @@ def _process_file_worker(file_path):
         for col in final_column_list:
             if col not in final_variant_list.columns:
                 final_variant_list[col] = '#N/A'
+
         final_variant_list = final_variant_list[final_column_list]
 
+        # Rename columns for output
         final_variant_list.rename(columns={
             'productcode': 'Part #',
             'productname': 'Full Title',
             'ischildofproductcode': 'Parent #',
-            'Parent Title': 'Title',
             'productprice': 'Retail Price',
             'length': 'Length (in)',
             'width': 'Width (in)',
@@ -119,10 +140,31 @@ def _process_file_worker(file_path):
             save_button.config(state=tk.NORMAL)
         ])
 
+    except FileNotFoundError:
+        root.after(0, lambda: [
+            status_label.config(text="Error: Product file not found."),
+            messagebox.showerror("File Not Found", "The product file could not be found."),
+            save_button.config(state=tk.DISABLED)
+        ])
+
+    except pd.errors.EmptyDataError:
+        root.after(0, lambda: [
+            status_label.config(text="Error: Product file is empty."),
+            messagebox.showerror("Empty File", "The product CSV file is empty."),
+            save_button.config(state=tk.DISABLED)
+        ])
+
+    except ValueError as ve:
+        root.after(0, lambda: [
+            status_label.config(text=f"Error: {ve}"),
+            messagebox.showerror("Invalid Data", str(ve)),
+            save_button.config(state=tk.DISABLED)
+        ])
+
     except Exception as e:
         root.after(0, lambda: [
-            status_label.config(text=f"Error: {e}"),
-            messagebox.showerror("Error", f"An error occurred:\n{e}"),
+            status_label.config(text=f"Unexpected error: {e}"),
+            messagebox.showerror("Error", f"An unexpected error occurred:\n{e}"),
             save_button.config(state=tk.DISABLED)
         ])
 
@@ -130,10 +172,34 @@ def select_product_file():
     global product_file_path
     file_path = filedialog.askopenfilename(title="Select Product CSV", filetypes=[("CSV files", "*.csv")])
     if file_path:
-        product_file_path = file_path
-        product_filename_label.config(text=f"Product File: {shorten_filename(file_path)}")
-        status_label.config(text="Product file selected. Now select category file.")
-        process_button.config(state=tk.DISABLED)  # Disable until category loaded
+        try:
+            # Quick check for required columns
+            with open(file_path, 'rb') as f:
+                raw_data = f.read()
+                encoding = chardet.detect(raw_data)['encoding']
+            df = pd.read_csv(file_path, encoding=encoding, low_memory=False)
+
+            required_cols = ['productcode', 'productname', 'ischildofproductcode']
+            for col in required_cols:
+                if col not in df.columns:
+                    messagebox.showerror("Invalid Product File", f"Product file must contain '{col}' column.")
+                    status_label.config(text="Invalid product file.")
+                    return
+
+            product_file_path = file_path
+            product_filename_label.config(text=f"Product File: {shorten_filename(file_path)}")
+            status_label.config(text="Product file selected. Now select category file.")
+            process_button.config(state=tk.DISABLED)  # Disable until category loaded
+
+        except FileNotFoundError:
+            messagebox.showerror("Product File Error", "Product file not found.")
+            status_label.config(text="Product file not found.")
+        except pd.errors.EmptyDataError:
+            messagebox.showerror("Product File Error", "Product file is empty.")
+            status_label.config(text="Product file is empty.")
+        except Exception as e:
+            messagebox.showerror("Product File Error", f"Failed to load product file:\n{e}")
+            status_label.config(text="Error loading product file.")
 
 def process_files():
     if not product_file_path:
