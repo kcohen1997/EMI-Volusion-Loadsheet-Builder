@@ -13,6 +13,15 @@ def shorten_filename(path, max_length=50):
     filename = os.path.basename(path)
     return filename if len(filename) <= max_length else "..." + filename[-(max_length - 3):]
 
+def update_buttons_state():
+    """Enable or disable step 3 and 4 buttons based on file load state."""
+    if product_file_path and category_mapping:
+        process_button.config(state=tk.NORMAL)
+        # Save button stays disabled until processing is done
+    else:
+        process_button.config(state=tk.DISABLED)
+        save_button.config(state=tk.DISABLED)
+
 def load_category_file():
     global category_mapping
 
@@ -21,7 +30,6 @@ def load_category_file():
         status_label.config(text="Category file load cancelled.")
         return
 
-    # Show progress bar
     progress_bar.pack(fill='x', padx=20, pady=5)
     progress_bar.start()
     status_label.config(text="Loading category file...")
@@ -47,9 +55,7 @@ def load_category_file():
             root.after(0, lambda: category_filename_label.config(text=f"Category File: {shorten_filename(file_path)}"))
             root.after(0, lambda: status_label.config(text="Category file loaded successfully."))
 
-            # Enable process button if product file already selected
-            if product_file_path:
-                root.after(0, lambda: process_button.config(state=tk.NORMAL))
+            root.after(0, update_buttons_state)
 
         except FileNotFoundError:
             root.after(0, lambda: [
@@ -91,45 +97,37 @@ def resolve_category_names(ids_str):
 def _process_file_worker(file_path):
     global processed_df
     try:
-        # Detect encoding
         with open(file_path, 'rb') as f:
             raw_data = f.read()
             encoding = chardet.detect(raw_data)['encoding']
 
-        # Load product CSV
         df = pd.read_csv(file_path, encoding=encoding, low_memory=False)
 
-        # Validate required columns for processing
         required_cols = ['productcode', 'productname', 'ischildofproductcode']
         for col in required_cols:
             if col not in df.columns:
                 raise ValueError(f"Missing required column '{col}' in product file.")
 
-        # Map parent title using productcode -> productname
         productcode_to_title = df.set_index('productcode')['productname'].to_dict()
         df['Parent Title'] = df['ischildofproductcode'].map(productcode_to_title)
 
-        # Remove rows that are children (keep only parents)
         child_product_codes = df['ischildofproductcode'].dropna().unique()
         df = df[~df['productcode'].isin(child_product_codes)]
 
-        # Format price if column exists
         if 'productprice' in df.columns:
             df['productprice'] = pd.to_numeric(df['productprice'], errors='coerce') \
                 .map(lambda x: f"${x:,.2f}" if pd.notnull(x) else "")
 
-        # Resolve category names if available
         if 'categoryids' in df.columns and category_mapping:
             df['Category Names'] = df['categoryids'].map(resolve_category_names)
         else:
             df['Category Names'] = "#N/A"
 
-        # Prepare final columns
         final_variant_list = df.copy()
         final_column_list = [
             'productcode', 'productname', 'ischildofproductcode', 'Parent Title', 'productprice',
             'length', 'width', 'height', 'productweight',
-            'productdescriptionshort', 'photourl', 'Image 2', 'Image 3', 'producturl', 'Category Names'
+            'productdescriptionshort', 'photourl', 'producturl', 'Category Names'
         ]
 
         for col in final_column_list:
@@ -138,7 +136,6 @@ def _process_file_worker(file_path):
 
         final_variant_list = final_variant_list[final_column_list]
 
-        # Rename columns for output
         final_variant_list.rename(columns={
             'productcode': 'Part #',
             'productname': 'Full Title',
@@ -149,7 +146,7 @@ def _process_file_worker(file_path):
             'height': 'Height (in)',
             'productweight': 'Weight (in)',
             'productdescriptionshort': 'Description',
-            'photourl': 'Image 1',
+            'photourl': 'Image Link',
             'producturl': 'Product Link',
             'Category Names': 'Categories'
         }, inplace=True)
@@ -206,7 +203,10 @@ def select_product_file():
     if not file_path:
         return
 
-    # Show progress bar
+    category_button.config(state=tk.DISABLED)
+    process_button.config(state=tk.DISABLED)
+    save_button.config(state=tk.DISABLED)
+
     progress_bar.pack(fill='x', padx=20, pady=5)
     progress_bar.start()
     status_label.config(text="Loading product file...")
@@ -229,8 +229,10 @@ def select_product_file():
 
             product_file_path = file_path
             root.after(0, lambda: product_filename_label.config(text=f"Product File: {shorten_filename(file_path)}"))
-            root.after(0, lambda: status_label.config(text="Product file selected. Now select category file."))
-            root.after(0, lambda: process_button.config(state=tk.DISABLED))
+            root.after(0, lambda: status_label.config(text="Product file loaded. Now select category file."))
+            root.after(0, lambda: category_button.config(state=tk.NORMAL))  # Enable category select button
+
+            root.after(0, update_buttons_state)  # Update process/save buttons if conditions met
 
         except FileNotFoundError:
             root.after(0, lambda: [
@@ -304,7 +306,7 @@ product_button.pack(padx=20, pady=(20, 5))
 product_filename_label = tk.Label(root, text="", fg="gray")
 product_filename_label.pack(pady=(0, 10))
 
-category_button = tk.Button(root, text="2. Select Category CSV File", command=load_category_file)
+category_button = tk.Button(root, text="2. Select Category CSV File", command=load_category_file, state=tk.DISABLED)
 category_button.pack(padx=20, pady=(5, 10))
 category_filename_label = tk.Label(root, text="", fg="gray")
 category_filename_label.pack(pady=(0, 10))
@@ -316,7 +318,6 @@ save_button = tk.Button(root, text="4. Save Processed File", command=save_file, 
 save_button.pack(padx=20, pady=(0, 15))
 
 progress_bar = ttk.Progressbar(root, mode='indeterminate')
-# Initially not packed
 
 status_label = tk.Label(root, text="", fg="blue")
 status_label.pack(pady=5)
