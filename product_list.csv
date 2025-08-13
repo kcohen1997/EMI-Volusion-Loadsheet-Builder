@@ -1,0 +1,6 @@
+productcode,productname,ischildofproductcode,productprice,length,width,height,productweight,productdescriptionshort,photourl,producturl,categoryids
+P001,Red Chair,,49.99,20,18,35,15,"Comfortable red chair","http://example.com/img/redchair.jpg","http://example.com/product/redchair","C01,C02"
+P002,Blue Sofa,,199.99,80,35,30,120,"Large blue sofa","http://example.com/img/bluesofa.jpg","http://example.com/product/bluesofa","C02"
+P003,Red Cushion,P001,9.99,15,15,5,2,"Soft cushion for chair","http://example.com/img/redcushion.jpg","http://example.com/product/redcushion","C03"
+P004,Wooden Table,,150,60,40,30,80,"Solid oak table","http://example.com/img/table.jpg","http://example.com/product/table","C01,C04"
+P005,Plastic Stool,,20,15,15,18,5,"Lightweight stool","http://example.com/img/stool.jpg","http://example.com/product/stool","C05"
