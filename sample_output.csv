@@ -1,0 +1,5 @@
+Part #,Full Title,Parent #,Parent Title,Retail Price,Length (in),Width (in),Height (in),Weight (in),Description,Image Link,Product Link,Categories
+P002,Blue Sofa,#N/A,#N/A,$199.99 ,80,35,30,120,Large blue sofa,http://example.com/img/bluesofa.jpg,http://example.com/product/bluesofa,Living Room
+P003,Red Cushion,P001,Red Chair,$9.99 ,15,15,5,2,Soft cushion for chair,http://example.com/img/redcushion.jpg,http://example.com/product/redcushion,Accessories
+P004,Wooden Table,#N/A,#N/A,$150.00 ,60,40,30,80,Solid oak table,http://example.com/img/table.jpg,http://example.com/product/table,"Furniture, Tables"
+P005,Plastic Stool,#N/A,#N/A,$20.00 ,15,15,18,5,Lightweight stool,http://example.com/img/stool.jpg,http://example.com/product/stool,Outdoor
