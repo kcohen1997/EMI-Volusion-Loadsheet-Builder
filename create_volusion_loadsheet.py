@@ -4,6 +4,8 @@ from tkinter import filedialog, messagebox, ttk
 import chardet
 import threading
 import os
+import re
+from html import unescape
 
 processed_df = None
 category_mapping = {}
@@ -14,17 +16,14 @@ def shorten_filename(path, max_length=50):
     return filename if len(filename) <= max_length else "..." + filename[-(max_length - 3):]
 
 def update_buttons_state():
-    """Enable or disable step 3 and 4 buttons based on file load state."""
     if product_file_path and category_mapping:
         process_button.config(state=tk.NORMAL)
-        # Save button stays disabled until processing is done
     else:
         process_button.config(state=tk.DISABLED)
         save_button.config(state=tk.DISABLED)
 
 def load_category_file():
     global category_mapping
-
     file_path = filedialog.askopenfilename(title="Select Category CSV", filetypes=[("CSV files", "*.csv")])
     if not file_path:
         status_label.config(text="Category file load cancelled.")
@@ -54,7 +53,6 @@ def load_category_file():
             category_mapping = dict(zip(cat_df['categoryid'].astype(str), cat_df['categoryname'].astype(str)))
             root.after(0, lambda: category_filename_label.config(text=f"Category File: {shorten_filename(file_path)}"))
             root.after(0, lambda: status_label.config(text="Category file loaded successfully."))
-
             root.after(0, update_buttons_state)
 
         except FileNotFoundError:
@@ -96,6 +94,17 @@ def resolve_category_names(ids_str):
 
 def _process_file_worker(file_path):
     global processed_df
+
+    def clean_description(text):
+        if pd.isna(text):
+            return ""
+        text = unescape(text)                  # Convert HTML entities
+        text = re.sub(r'<[^>]+>', '', text)   # Remove HTML tags
+        text = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', text)  # Remove control characters
+        text = re.sub(r"[^a-zA-Z0-9\s.,;:!?(){}\[\]\-_'\"&/%+°•$@]", "", text)  # Whitelist
+        text = re.sub(r'\s+', ' ', text)      # Collapse multiple spaces
+        return text.strip()
+
     try:
         with open(file_path, 'rb') as f:
             raw_data = f.read()
@@ -103,39 +112,50 @@ def _process_file_worker(file_path):
 
         df = pd.read_csv(file_path, encoding=encoding, low_memory=False)
 
+        # Validate required columns
         required_cols = ['productcode', 'productname', 'ischildofproductcode']
-        for col in required_cols:
-            if col not in df.columns:
-                raise ValueError(f"Missing required column '{col}' in product file.")
+        missing_cols = set(required_cols) - set(df.columns)
+        if missing_cols:
+            raise ValueError(f"Missing required column(s): {', '.join(missing_cols)}")
 
+        # Map parent product titles
         productcode_to_title = df.set_index('productcode')['productname'].to_dict()
         df['Parent Title'] = df['ischildofproductcode'].map(productcode_to_title)
 
+        # Remove child products from main list
         child_product_codes = df['ischildofproductcode'].dropna().unique()
         df = df[~df['productcode'].isin(child_product_codes)]
 
+        # Format price if exists
         if 'productprice' in df.columns:
             df['productprice'] = pd.to_numeric(df['productprice'], errors='coerce') \
                 .map(lambda x: f"${x:,.2f}" if pd.notnull(x) else "")
 
+        # Resolve categories if available
         if 'categoryids' in df.columns and category_mapping:
             df['Category Names'] = df['categoryids'].map(resolve_category_names)
         else:
             df['Category Names'] = "#N/A"
 
+        # Clean description column and fill empty fields
+        if 'productdescriptionshort' in df.columns:
+            df['productdescriptionshort'] = df['productdescriptionshort'].map(clean_description)
+            df['productdescriptionshort'] = df['productdescriptionshort'].replace('', '#N/A')
+
+        # Prepare final column list
         final_variant_list = df.copy()
         final_column_list = [
             'productcode', 'productname', 'ischildofproductcode', 'Parent Title', 'productprice',
             'length', 'width', 'height', 'productweight',
             'productdescriptionshort', 'photourl', 'producturl', 'Category Names'
         ]
-
         for col in final_column_list:
             if col not in final_variant_list.columns:
                 final_variant_list[col] = '#N/A'
 
         final_variant_list = final_variant_list[final_column_list]
 
+        # Rename columns
         final_variant_list.rename(columns={
             'productcode': 'Part #',
             'productname': 'Full Title',
@@ -220,19 +240,19 @@ def select_product_file():
             df = pd.read_csv(file_path, encoding=encoding, low_memory=False)
 
             required_cols = ['productcode', 'productname', 'ischildofproductcode']
-            for col in required_cols:
-                if col not in df.columns:
-                    root.after(0, lambda: messagebox.showerror(
-                        "Invalid Product File", f"Product file must contain '{col}' column."))
-                    root.after(0, lambda: status_label.config(text="Invalid product file."))
-                    return
+            missing_cols = set(required_cols) - set(df.columns)
+            if missing_cols:
+                root.after(0, lambda: messagebox.showerror(
+                    "Invalid Product File", f"Missing column(s): {', '.join(missing_cols)}"))
+                root.after(0, lambda: status_label.config(text="Invalid product file."))
+                return
 
             product_file_path = file_path
             root.after(0, lambda: product_filename_label.config(text=f"Product File: {shorten_filename(file_path)}"))
             root.after(0, lambda: status_label.config(text="Product file loaded. Now select category file."))
-            root.after(0, lambda: category_button.config(state=tk.NORMAL))  # Enable category select button
+            root.after(0, lambda: category_button.config(state=tk.NORMAL))
 
-            root.after(0, update_buttons_state)  # Update process/save buttons if conditions met
+            root.after(0, update_buttons_state)
 
         except FileNotFoundError:
             root.after(0, lambda: [
@@ -318,7 +338,6 @@ save_button = tk.Button(root, text="4. Save Processed File", command=save_file, 
 save_button.pack(padx=20, pady=(0, 15))
 
 progress_bar = ttk.Progressbar(root, mode='indeterminate')
-
 status_label = tk.Label(root, text="", fg="blue")
 status_label.pack(pady=5)
 
